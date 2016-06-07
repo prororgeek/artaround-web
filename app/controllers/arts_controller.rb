@@ -1,6 +1,6 @@
 class ArtsController < ApplicationController
   before_filter :load_art, :only => [:show, :comment, :submit, :add_photo, :flag]
-
+ 
 
   # New 2 step flow
   def new_art_photo
@@ -29,6 +29,7 @@ class ArtsController < ApplicationController
   end
 
   def create
+
     latitude = params[:art].delete 'latitude'
     longitude = params[:art].delete 'longitude'
 
@@ -44,11 +45,12 @@ class ArtsController < ApplicationController
       end
     end
    
-    if !params[:art][:new_artist].nil?
+    if !params[:art][:new_artist].blank?
       params[:art][:artist] <<  params[:art][:new_artist]
     end 
     @art = Art.new params[:art]
     @photo = Photo.find(params[:photo_id])
+
     @art.artist = params[:art][:artist]
     @art.commissioned_by = @commissioner
     @art.location = [latitude, longitude] if latitude and longitude
@@ -57,7 +59,10 @@ class ArtsController < ApplicationController
     
     @art.link_art_id(params[:link_title], params[:link_url])
     # Get around Rails bug that introduces empty element with multiple selects
+    
     @art.category.reject!(&:blank?)
+    @art.tag.reject!(&:blank?)
+    @art.artist.reject!(&:blank?)
 
     if @art.safely.save
         AdminMailer.new_art(@art).deliver
@@ -74,10 +79,13 @@ class ArtsController < ApplicationController
   end
 
   def submit
-    #debugger 
     @submission = @art.submissions.build params[:submission]
-    @art.tag = params[:submission][:tag]
-    @art.artist = params[:submission][:artist]
+    @art.tag = params[:submission][:tag].reject!(&:blank?)
+    @art.artist = params[:submission][:artist].reject!(&:blank?)
+    @art.category = params[:submission][:category].reject!(&:blank?)
+    @art.year = params[:submission][:year]
+    @art.location_description = params[:submission][:location_description]
+    @art.description = params[:submission][:description]
 
     if @submission.save
       @art.submitted_at = Time.now
@@ -140,7 +148,8 @@ class ArtsController < ApplicationController
       head 201
     end
   end
-
+  
+ 
   def index
     valid_categories = ["Architecture", "Digital", "Drawing", "Gallery",
                           "Graffiti", "Installation", "Interactive",
@@ -150,14 +159,14 @@ class ArtsController < ApplicationController
                           "Photograph", "Print", "Projection", "Sculpture",
                           "Statue", "Stained glass", "Temporary", "Textile",
                           "Video"]
-    filter = params[:filter]
-    tag_filter = params[:tag_filter]
-    tag_filter = nil if params[:tag_filter] == 'All'
-    unless filter.nil?
-      filter.capitalize!
+    category = params[:category]
+    tag = params[:tag]
+    tag = nil if params[:tag] == 'All' || params[:tag] == ""
+    unless category.nil?
+      category.capitalize!
     end
-    unless valid_categories.include?(filter)
-      filter = nil
+    unless valid_categories.include?(category)
+      category = nil
     end
 
     if params[:sort] == 'popular'
@@ -165,31 +174,31 @@ class ArtsController < ApplicationController
     else
       sort = :created_at
     end
-
-    if filter == nil && tag_filter == nil
-      @arts = Art.approved.desc(sort).page(params[:page]).per(25)
-    elsif filter != nil && tag_filter == nil
-      @arts = Art.approved.where(category: filter).desc(sort).page(params[:page]).per(25)
-    elsif filter == nil && tag_filter != nil
-      @arts = Art.approved.where(tag: tag_filter).desc(sort).page(params[:page]).per(25)
-    else
-      @arts = Art.approved.where(category: filter ,tag: tag_filter).desc(sort).page(params[:page]).per(25)
-    end
     
+    if category == nil && tag == nil
+      @arts = Art.approved.desc(sort).page(params[:page]).per(25)
+    elsif category != nil && tag == nil
+      @arts = Art.approved.where(category: category).desc(sort).page(params[:page]).per(25)
+    elsif category == nil && tag != nil
+      @arts = Art.approved.where(tag: tag).desc(sort).page(params[:page]).per(25)
+    else
+      @arts = Art.approved.where(category: category ,tag: tag).desc(sort).page(params[:page]).per(25)
+    end
+
     @artworks_count= Art.count()
     #@artworks_count = @a_count.to_s.chars.to_a.reverse.each_slice(1).map(&:join).join(",").reverse
     
     @photos_count= Photo.count()
     #@photos_count= @p_count.to_s.chars.to_a.reverse.each_slice(1).map(&:join).join(",").reverse
-    
+ 
     @c_count= Country.find(:first)
     @countries_count= @c_count.country_count if @c_count.present?
     #@countries_count= @co_count.to_s.chars.to_a.reverse.each_slice(1).map(&:join).join(",").reverse
-end
+  end
 
+  
   def map
     @arts = Art.approved.all
-
     @events = Event.current.all.select {|e| e.arts.count > 0 && e.arts.first.photos.count > 0}
 
     if params[:slug].present?
@@ -198,7 +207,6 @@ end
   end
 
   def manage_link
-    # debugger
     if params[:link_url_id].present?
       art_link = ArtLink.find(params[:link_url_id])
       art_link.title = params[:title]
